@@ -5,43 +5,98 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { getJobs, applyForJob, getApplications, PREDEFINED_SKILLS, calculateMatchScore } from '@/lib/data-store';
+
+const PREDEFINED_SKILLS = [
+  'JavaScript', 'TypeScript', 'React', 'Next.js', 'Vue', 'Angular',
+  'Python', 'Java', 'C#', 'Go', 'Rust', 'Kotlin',
+  'Node.js', 'Express', 'Django', 'Spring Boot', 'ASP.NET',
+  'MongoDB', 'PostgreSQL', 'MySQL', 'Firebase', 'Redis',
+  'Docker', 'Kubernetes', 'AWS', 'Azure', 'Google Cloud',
+  'Git', 'GitHub', 'REST API', 'GraphQL', 'WebSocket',
+  'HTML', 'CSS', 'Tailwind CSS', 'Bootstrap',
+  'Jest', 'Cypress', 'Mocha', 'Selenium',
+];
+
+function calculateMatchScore(studentSkills: string[], requiredSkills: string[]): number {
+  if (requiredSkills.length === 0) return 100;
+  const matches = studentSkills.filter(skill => requiredSkills.includes(skill)).length;
+  return Math.round((matches / requiredSkills.length) * 100);
+}
 
 export default function StudentDashboard() {
-  const { user, logout } = useAuth();
+  const { user, logout, token } = useAuth();
   const router = useRouter();
   const [jobs, setJobs] = useState<any[]>([]);
-  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [applications, setApplications] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!user || user.role !== 'student') {
       router.push('/');
     } else {
-      setJobs(getJobs().filter(j => j.status === 'open'));
-      setApplications(getApplications().filter(a => a.studentId === user.id));
+      fetchJobs();
+      fetchApplications();
     }
   }, [user, router]);
 
-  const handleApply = (jobId: string) => {
-    const job = jobs.find(j => j.id === jobId);
-    const score = calculateMatchScore(selectedSkills, job?.requiredSkills || []);
-    applyForJob({
-      jobId,
-      studentId: user!.id,
-      studentName: user!.name,
-      studentEmail: user!.email,
-      studentSkills: selectedSkills,
-      status: 'pending',
-    });
-    alert('Applied successfully!');
-    setApplications(getApplications().filter(a => a.studentId === user?.id));
+  const fetchJobs = async () => {
+    try {
+      const res = await fetch('/api/jobs', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setJobs(data.jobs || []);
+      }
+    } catch (error) {
+      console.error('Error fetching jobs:', error);
+    }
   };
 
-  const toggleSkill = (skill: string) => {
-    setSelectedSkills(prev =>
-      prev.includes(skill) ? prev.filter(s => s !== skill) : [...prev, skill]
-    );
+  const fetchApplications = async () => {
+    try {
+      const res = await fetch('/api/applications', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setApplications(data.applications || []);
+      }
+    } catch (error) {
+      console.error('Error fetching applications:', error);
+    }
+  };
+
+  const handleApply = async (jobId: string) => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/applications', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ jobId }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        alert('Applied successfully!');
+        fetchApplications();
+      } else {
+        alert(data.error || 'Failed to apply');
+      }
+    } catch (error) {
+      console.error('Error applying:', error);
+      alert('Failed to apply');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const hasApplied = (jobId: string) => {
+    return applications.some(app => app.job?._id === jobId);
   };
 
   return (
@@ -63,27 +118,33 @@ export default function StudentDashboard() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-8">
-        {/* Skills Section */}
+        {/* Student Info */}
         <Card className="mb-8">
           <CardHeader>
-            <CardTitle>Your Skills</CardTitle>
-            <CardDescription>Select skills to improve job matching</CardDescription>
+            <CardTitle>Your Profile</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex flex-wrap gap-2">
-              {PREDEFINED_SKILLS.map(skill => (
-                <button
-                  key={skill}
-                  onClick={() => toggleSkill(skill)}
-                  className={`px-3 py-1 rounded-full text-sm font-medium transition ${
-                    selectedSkills.includes(skill)
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-secondary text-foreground hover:bg-muted'
-                  }`}
-                >
-                  {skill}
-                </button>
-              ))}
+            <div className="space-y-2">
+              <p className="text-sm"><span className="font-semibold">Name:</span> {user?.name}</p>
+              <p className="text-sm"><span className="font-semibold">Email:</span> {user?.email}</p>
+              {user?.university && (
+                <p className="text-sm"><span className="font-semibold">University:</span> {user.university}</p>
+              )}
+              {user?.graduationYear && (
+                <p className="text-sm"><span className="font-semibold">Graduation Year:</span> {user.graduationYear}</p>
+              )}
+              {user?.skills && user.skills.length > 0 && (
+                <div>
+                  <p className="text-sm font-semibold mb-2">Skills:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {user.skills.map((skill: string) => (
+                      <span key={skill} className="px-2 py-1 bg-primary/10 text-primary text-xs rounded">
+                        {skill}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -100,10 +161,14 @@ export default function StudentDashboard() {
             ) : (
               <div className="space-y-4">
                 {applications.map(app => (
-                  <div key={app.id} className="flex items-center justify-between p-4 border border-border rounded-lg">
-                    <div>
-                      <p className="font-semibold text-foreground">{app.jobId}</p>
+                  <div key={app._id} className="flex items-center justify-between p-4 border border-border rounded-lg">
+                    <div className="flex-1">
+                      <p className="font-semibold text-foreground">{app.job?.title || 'Job'}</p>
+                      <p className="text-sm text-muted-foreground">{app.companyName}</p>
                       <p className="text-sm text-muted-foreground">Match Score: {app.matchScore}%</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Applied: {new Date(app.appliedAt).toLocaleDateString()}
+                      </p>
                     </div>
                     <span className={`px-3 py-1 rounded text-sm font-medium ${
                       app.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
@@ -123,7 +188,7 @@ export default function StudentDashboard() {
         <Card>
           <CardHeader>
             <CardTitle>Available Jobs ({jobs.length})</CardTitle>
-            <CardDescription>Click apply to submit your profile</CardDescription>
+            <CardDescription>Click apply to submit your application</CardDescription>
           </CardHeader>
           <CardContent>
             {jobs.length === 0 ? (
@@ -131,13 +196,14 @@ export default function StudentDashboard() {
             ) : (
               <div className="space-y-4">
                 {jobs.map(job => {
-                  const score = calculateMatchScore(selectedSkills, job.requiredSkills);
+                  const score = calculateMatchScore(user?.skills || [], job.requiredSkills || []);
+                  const applied = hasApplied(job._id);
                   return (
-                    <div key={job.id} className="p-4 border border-border rounded-lg">
+                    <div key={job._id} className="p-4 border border-border rounded-lg">
                       <div className="flex items-start justify-between mb-2">
-                        <div>
+                        <div className="flex-1">
                           <h3 className="font-semibold text-foreground">{job.title}</h3>
-                          <p className="text-sm text-muted-foreground">{job.company}</p>
+                          <p className="text-sm text-muted-foreground">{job.companyName}</p>
                         </div>
                         <div className="text-right">
                           <p className="text-lg font-bold text-primary">{score}%</p>
@@ -146,14 +212,18 @@ export default function StudentDashboard() {
                       </div>
                       <p className="text-sm text-foreground mb-3">{job.description}</p>
                       <div className="flex flex-wrap gap-1 mb-3">
-                        {job.requiredSkills.map(skill => (
+                        {job.requiredSkills?.map((skill: string) => (
                           <span key={skill} className="px-2 py-1 bg-secondary text-foreground text-xs rounded">
                             {skill}
                           </span>
                         ))}
                       </div>
-                      <Button onClick={() => handleApply(job.id)} size="sm">
-                        Apply Now
+                      <Button 
+                        onClick={() => handleApply(job._id)} 
+                        size="sm"
+                        disabled={loading || applied}
+                      >
+                        {applied ? 'Already Applied' : 'Apply Now'}
                       </Button>
                     </div>
                   );

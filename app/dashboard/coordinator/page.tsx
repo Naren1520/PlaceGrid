@@ -14,6 +14,7 @@ export default function CoordinatorDashboard() {
   const router = useRouter();
   const [companies, setCompanies] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
+  const [applications, setApplications] = useState<any[]>([]);
   const [isAddCompanyOpen, setIsAddCompanyOpen] = useState(false);
   const [newCompany, setNewCompany] = useState({ email: '', password: '', companyName: '' });
   const [loading, setLoading] = useState(false);
@@ -24,6 +25,7 @@ export default function CoordinatorDashboard() {
     } else {
       fetchCompanies();
       fetchStudents();
+      fetchApplications();
     }
   }, [user, router]);
 
@@ -52,6 +54,20 @@ export default function CoordinatorDashboard() {
       }
     } catch (error) {
       console.error('Error fetching students:', error);
+    }
+  };
+
+  const fetchApplications = async () => {
+    try {
+      const res = await fetch('/api/applications', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setApplications(data.applications || []);
+      }
+    } catch (error) {
+      console.error('Error fetching applications:', error);
     }
   };
 
@@ -107,8 +123,8 @@ export default function CoordinatorDashboard() {
 
       <main className="max-w-7xl mx-auto px-4 py-8">
         {/* Statistics */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-          <Card>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          <Card key="companies-stat">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">Total Companies</CardTitle>
             </CardHeader>
@@ -116,12 +132,20 @@ export default function CoordinatorDashboard() {
               <p className="text-3xl font-bold text-primary">{companies.length}</p>
             </CardContent>
           </Card>
-          <Card>
+          <Card key="students-stat">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">Total Students</CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-3xl font-bold text-primary">{students.length}</p>
+            </CardContent>
+          </Card>
+          <Card key="applications-stat">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Total Applications</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold text-primary">{applications.length}</p>
             </CardContent>
           </Card>
         </div>
@@ -144,7 +168,7 @@ export default function CoordinatorDashboard() {
                     <DialogDescription>Create a new company account</DialogDescription>
                   </DialogHeader>
                   <form onSubmit={handleAddCompany} className="space-y-4">
-                    <div key="companyName-field">
+                    <div>
                       <Label htmlFor="companyName">Company Name</Label>
                       <Input
                         id="companyName"
@@ -153,7 +177,7 @@ export default function CoordinatorDashboard() {
                         required
                       />
                     </div>
-                    <div key="email-field">
+                    <div>
                       <Label htmlFor="email">Email</Label>
                       <Input
                         id="email"
@@ -163,7 +187,7 @@ export default function CoordinatorDashboard() {
                         required
                       />
                     </div>
-                    <div key="password-field">
+                    <div>
                       <Label htmlFor="password">Password</Label>
                       <Input
                         id="password"
@@ -202,6 +226,77 @@ export default function CoordinatorDashboard() {
                         {company.isActive ? 'Active' : 'Inactive'}
                       </span>
                     </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* All Applications */}
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle>All Applications ({applications.length})</CardTitle>
+            <CardDescription>View all student applications with details</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {applications.length === 0 ? (
+              <p className="text-muted-foreground">No applications yet</p>
+            ) : (
+              <div className="space-y-4">
+                {applications.map((app) => (
+                  <div key={app._id} className="p-4 border border-border rounded-lg">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex-1">
+                        <p className="font-semibold text-foreground text-lg">{app.studentName}</p>
+                        <p className="text-sm text-muted-foreground">{app.studentEmail}</p>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Applied to: <span className="font-medium">{app.job?.title || 'N/A'}</span> at {app.companyName}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Applied: {new Date(app.appliedAt).toLocaleDateString()} at {new Date(app.appliedAt).toLocaleTimeString()}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-2xl font-bold text-primary">{app.matchScore}%</p>
+                        <p className="text-xs text-muted-foreground">Match Score</p>
+                        <span className={`inline-block mt-2 px-3 py-1 rounded text-xs font-medium ${
+                          app.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                          app.status === 'accepted' ? 'bg-green-100 text-green-800' :
+                          'bg-red-100 text-red-800'
+                        }`}>
+                          {app.status.toUpperCase()}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {/* Student Skills */}
+                    {app.studentSkills && app.studentSkills.length > 0 && (
+                      <div className="mt-3">
+                        <p className="text-xs font-semibold text-foreground mb-2">Student Skills:</p>
+                        <div className="flex flex-wrap gap-1">
+                          {app.studentSkills.map((skill: string) => (
+                            <span key={skill} className="px-2 py-1 bg-primary/10 text-primary text-xs rounded">
+                              {skill}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Required Skills */}
+                    {app.job?.requiredSkills && app.job.requiredSkills.length > 0 && (
+                      <div className="mt-3">
+                        <p className="text-xs font-semibold text-foreground mb-2">Required Skills:</p>
+                        <div className="flex flex-wrap gap-1">
+                          {app.job.requiredSkills.map((skill: string) => (
+                            <span key={skill} className="px-2 py-1 bg-secondary text-foreground text-xs rounded">
+                              {skill}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
