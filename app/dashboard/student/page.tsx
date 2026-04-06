@@ -28,6 +28,7 @@ export default function StudentDashboard() {
   const router = useRouter();
   const [jobs, setJobs] = useState<any[]>([]);
   const [applications, setApplications] = useState<any[]>([]);
+  const [isFrozen, setIsFrozen] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -47,6 +48,7 @@ export default function StudentDashboard() {
       if (res.ok) {
         const data = await res.json();
         setJobs(data.jobs || []);
+        setIsFrozen(data.isFrozen || false);
       }
     } catch (error) {
       console.error('Error fetching jobs:', error);
@@ -109,6 +111,11 @@ export default function StudentDashboard() {
             <p className="text-sm text-muted-foreground">Student Dashboard</p>
           </div>
           <div className="flex items-center gap-4">
+            {isFrozen && (
+              <span className="px-3 py-1 bg-red-100 text-red-800 text-sm font-semibold rounded">
+                SYSTEM FROZEN
+              </span>
+            )}
             <span className="text-sm text-foreground">{user?.name}</span>
             <Button variant="outline" onClick={() => { logout(); router.push('/'); }}>
               Logout
@@ -172,10 +179,11 @@ export default function StudentDashboard() {
                     </div>
                     <span className={`px-3 py-1 rounded text-sm font-medium ${
                       app.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                      app.status === 'accepted' ? 'bg-green-100 text-green-800' :
+                      app.status === 'shortlisted' ? 'bg-blue-100 text-blue-800' :
+                      app.status === 'placed' ? 'bg-green-100 text-green-800' :
                       'bg-red-100 text-red-800'
                     }`}>
-                      {app.status}
+                      {app.status.toUpperCase()}
                     </span>
                   </div>
                 ))}
@@ -198,12 +206,19 @@ export default function StudentDashboard() {
                 {jobs.map(job => {
                   const score = calculateMatchScore(user?.skills || [], job.requiredSkills || []);
                   const applied = hasApplied(job._id);
+                  const isPastDeadline = job.deadline && new Date() > new Date(job.deadline);
                   return (
                     <div key={job._id} className="p-4 border border-border rounded-lg">
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex-1">
                           <h3 className="font-semibold text-foreground">{job.title}</h3>
                           <p className="text-sm text-muted-foreground">{job.companyName}</p>
+                          {job.deadline && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Deadline: {new Date(job.deadline).toLocaleString()}
+                              {isPastDeadline && <span className="text-red-600 ml-2">(Closed)</span>}
+                            </p>
+                          )}
                         </div>
                         <div className="text-right">
                           <p className="text-lg font-bold text-primary">{score}%</p>
@@ -221,9 +236,9 @@ export default function StudentDashboard() {
                       <Button 
                         onClick={() => handleApply(job._id)} 
                         size="sm"
-                        disabled={loading || applied}
+                        disabled={loading || applied || isPastDeadline || isFrozen}
                       >
-                        {applied ? 'Already Applied' : 'Apply Now'}
+                        {applied ? 'Already Applied' : isPastDeadline ? 'Deadline Passed' : 'Apply Now'}
                       </Button>
                     </div>
                   );

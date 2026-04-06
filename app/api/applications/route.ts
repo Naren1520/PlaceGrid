@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Check if system is frozen
+    // Check if system is frozen - HARD CONSTRAINT
     const settings = await CoordinatorSettings.findOne({});
     if (settings?.isFrozen) {
       return NextResponse.json(
@@ -102,6 +102,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: 'Job not found' },
         { status: 404 }
+      );
+    }
+
+    // HARD CONSTRAINT: Enforce deadline at data acceptance point
+    if (job.deadline && new Date() > new Date(job.deadline)) {
+      return NextResponse.json(
+        { error: 'Application deadline has passed' },
+        { status: 403 }
       );
     }
 
@@ -136,6 +144,7 @@ export async function POST(req: NextRequest) {
       companyName: job.companyName,
       studentSkills: student.skills || [],
       matchScore,
+      status: 'pending',
     });
 
     await application.save();
@@ -162,27 +171,23 @@ export async function PATCH(req: NextRequest) {
     }
 
     const decoded = verifyToken(token);
-    if (!decoded || decoded.role !== 'company') {
+    if (!decoded || (decoded.role !== 'company' && decoded.role !== 'coordinator')) {
       return NextResponse.json(
-        { error: 'Only companies can update applications' },
+        { error: 'Only companies and coordinators can update applications' },
         { status: 403 }
       );
     }
 
     const { applicationId, status } = await req.json();
 
-    if (!applicationId || !status || !['pending', 'accepted', 'rejected'].includes(status)) {
+    if (!applicationId || !status || !['pending', 'shortlisted', 'rejected', 'placed'].includes(status)) {
       return NextResponse.json(
         { error: 'Invalid application ID or status' },
         { status: 400 }
       );
     }
 
-    const application = await Application.findByIdAndUpdate(
-      applicationId,
-      { status },
-      { new: true }
-    ).populate('job');
+    const application = await Application.findById(applicationId).populate('job');
 
     if (!application) {
       return NextResponse.json(
@@ -190,6 +195,17 @@ export async function PATCH(req: NextRequest) {
         { status: 404 }
       );
     }
+
+    // Companies can only update their own applications
+    if (decoded.role === 'company' && application.company.toString() !== decoded.userId) {
+      return NextResponse.json(
+        { error: 'Unauthorized to update this application' },
+        { status: 403 }
+      );
+    }
+
+    application.status = status;
+    await application.save();
 
     return NextResponse.json({ application });
   } catch (error) {

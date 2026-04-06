@@ -15,6 +15,7 @@ export default function CoordinatorDashboard() {
   const [companies, setCompanies] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [applications, setApplications] = useState<any[]>([]);
+  const [isFrozen, setIsFrozen] = useState(false);
   const [isAddCompanyOpen, setIsAddCompanyOpen] = useState(false);
   const [newCompany, setNewCompany] = useState({ email: '', password: '', companyName: '' });
   const [loading, setLoading] = useState(false);
@@ -26,6 +27,7 @@ export default function CoordinatorDashboard() {
       fetchCompanies();
       fetchStudents();
       fetchApplications();
+      fetchFreezeStatus();
     }
   }, [user, router]);
 
@@ -71,6 +73,45 @@ export default function CoordinatorDashboard() {
     }
   };
 
+  const fetchFreezeStatus = async () => {
+    try {
+      const res = await fetch('/api/coordinator/freeze', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setIsFrozen(data.isFrozen || false);
+      }
+    } catch (error) {
+      console.error('Error fetching freeze status:', error);
+    }
+  };
+
+  const handleToggleFreeze = async () => {
+    try {
+      const res = await fetch('/api/coordinator/freeze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ freeze: !isFrozen }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setIsFrozen(data.isFrozen);
+        alert(`System ${data.isFrozen ? 'FROZEN' : 'UNFROZEN'} successfully`);
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Failed to toggle freeze');
+      }
+    } catch (error) {
+      console.error('Error toggling freeze:', error);
+      alert('Failed to toggle freeze');
+    }
+  };
+
   const handleAddCompany = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -113,6 +154,11 @@ export default function CoordinatorDashboard() {
             <p className="text-sm text-muted-foreground">Coordinator Dashboard</p>
           </div>
           <div className="flex items-center gap-4">
+            {isFrozen && (
+              <span className="px-3 py-1 bg-red-100 text-red-800 text-sm font-semibold rounded">
+                SYSTEM FROZEN
+              </span>
+            )}
             <span className="text-sm text-foreground">{user?.name}</span>
             <Button variant="outline" onClick={() => { logout(); router.push('/'); }}>
               Logout
@@ -122,6 +168,37 @@ export default function CoordinatorDashboard() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-8">
+        {/* Freeze Control */}
+        <Card className={`mb-8 border-2 ${isFrozen ? 'border-red-500 bg-red-50' : 'border-green-500 bg-green-50'}`}>
+          <CardHeader>
+            <CardTitle className={isFrozen ? 'text-red-700' : 'text-green-700'}>
+              System Control
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-semibold text-foreground">
+                  Current Status: <span className={isFrozen ? 'text-red-600' : 'text-green-600'}>
+                    {isFrozen ? 'FROZEN' : 'ACTIVE'}
+                  </span>
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {isFrozen 
+                    ? 'No new jobs can be posted and no applications can be submitted'
+                    : 'System is operating normally'}
+                </p>
+              </div>
+              <Button
+                onClick={handleToggleFreeze}
+                className={isFrozen ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}
+              >
+                {isFrozen ? 'Unfreeze System' : 'Freeze System'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Statistics */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           <Card key="companies-stat">
@@ -233,6 +310,61 @@ export default function CoordinatorDashboard() {
           </CardContent>
         </Card>
 
+        {/* Placement Status */}
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle>Placement Status</CardTitle>
+            <CardDescription>Track student placement progress</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {students.length === 0 ? (
+              <p className="text-muted-foreground">No students registered</p>
+            ) : (
+              <div className="space-y-3">
+                {students.map((student) => {
+                  const studentApps = applications.filter(app => app.student?._id === student._id || app.studentEmail === student.email);
+                  const placedApp = studentApps.find(app => app.status === 'placed');
+                  const shortlistedCount = studentApps.filter(app => app.status === 'shortlisted').length;
+                  const pendingCount = studentApps.filter(app => app.status === 'pending').length;
+                  
+                  return (
+                    <div key={student._id} className="p-4 border border-border rounded-lg">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <p className="font-semibold text-foreground">{student.name}</p>
+                          <p className="text-sm text-muted-foreground">{student.email}</p>
+                          {student.university && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {student.university} - Class of {student.graduationYear}
+                            </p>
+                          )}
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Applications: {studentApps.length} | Shortlisted: {shortlistedCount} | Pending: {pendingCount}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          {placedApp ? (
+                            <div>
+                              <span className="px-3 py-1 rounded text-sm font-medium bg-green-100 text-green-800">
+                                PLACED
+                              </span>
+                              <p className="text-xs text-muted-foreground mt-1">{placedApp.companyName}</p>
+                            </div>
+                          ) : (
+                            <span className="px-3 py-1 rounded text-sm font-medium bg-yellow-100 text-yellow-800">
+                              UNPLACED
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* All Applications */}
         <Card className="mb-8">
           <CardHeader>
@@ -262,7 +394,8 @@ export default function CoordinatorDashboard() {
                         <p className="text-xs text-muted-foreground">Match Score</p>
                         <span className={`inline-block mt-2 px-3 py-1 rounded text-xs font-medium ${
                           app.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                          app.status === 'accepted' ? 'bg-green-100 text-green-800' :
+                          app.status === 'shortlisted' ? 'bg-blue-100 text-blue-800' :
+                          app.status === 'placed' ? 'bg-green-100 text-green-800' :
                           'bg-red-100 text-red-800'
                         }`}>
                           {app.status.toUpperCase()}

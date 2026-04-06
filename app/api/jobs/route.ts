@@ -7,21 +7,32 @@ export async function GET(req: NextRequest) {
   try {
     await dbConnect();
 
+    const token = getTokenFromHeaders(req.headers);
+    const decoded = token ? verifyToken(token) : null;
+
     // Check if system is frozen
     const settings = await CoordinatorSettings.findOne({});
-    if (settings?.isFrozen) {
-      return NextResponse.json({
-        jobs: [],
-        isFrozen: true,
-        message: 'Placement system is currently frozen',
-      });
+    const isFrozen = settings?.isFrozen || false;
+
+    let jobs;
+
+    if (decoded?.role === 'company') {
+      // Companies only see their own jobs - COMPANY ISOLATION
+      jobs = await Job.find({ company: decoded.userId })
+        .sort({ createdAt: -1 });
+    } else if (decoded?.role === 'coordinator') {
+      // Coordinators see all jobs
+      jobs = await Job.find()
+        .populate('company', 'name companyName')
+        .sort({ createdAt: -1 });
+    } else {
+      // Students see all open jobs (no company info that reveals other companies)
+      jobs = await Job.find({ isOpen: true })
+        .select('-company') // Don't expose company ID
+        .sort({ createdAt: -1 });
     }
 
-    const jobs = await Job.find({ isOpen: true })
-      .populate('company', 'name companyName')
-      .sort({ createdAt: -1 });
-
-    return NextResponse.json({ jobs });
+    return NextResponse.json({ jobs, isFrozen });
   } catch (error) {
     console.error('Error fetching jobs:', error);
     return NextResponse.json(
@@ -48,7 +59,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Check if system is frozen
+    // Check if system is frozen - HARD CONSTRAINT
     const settings = await CoordinatorSettings.findOne({});
     if (settings?.isFrozen) {
       return NextResponse.json(
@@ -59,9 +70,18 @@ export async function POST(req: NextRequest) {
 
     const { title, description, requiredSkills, deadline } = await req.json();
 
-    if (!title || !description || !requiredSkills) {
+    if (!title || !description || !requiredSkills || !deadline) {
       return NextResponse.json(
-        { error: 'Missing required fields' },
+        { error: 'Missing required fields (title, description, skills, deadline)' },
+        { status: 400 }
+      );
+    }
+
+    // Validate deadline is in the future
+    const deadlineDate = new Date(deadline);
+    if (deadlineDate <= new Date()) {
+      return NextResponse.json(
+        { error: 'Deadline must be in the future' },
         { status: 400 }
       );
     }
@@ -70,10 +90,11 @@ export async function POST(req: NextRequest) {
       title,
       description,
       requiredSkills,
-      deadline: deadline ? new Date(deadline) : null,
+      deadline: deadlineDate,
       company: decoded.userId,
-      companyId: decoded.companyId,
-      companyName: decoded.companyName,
+      companyId: decoded.email,
+      companyName: decoded.companyName || decoded.email,
+      isOpen: true,
     });
 
     await job.save();
