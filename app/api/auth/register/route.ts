@@ -5,7 +5,16 @@ import { hashPassword, signToken } from '@/lib/auth-utils';
 
 export async function POST(req: NextRequest) {
   try {
-    await dbConnect();
+    // Connect to database with error handling
+    try {
+      await dbConnect();
+    } catch (dbError) {
+      console.error('Database connection error:', dbError);
+      return NextResponse.json(
+        { error: 'Database connection failed. Please try again later.' },
+        { status: 500 }
+      );
+    }
 
     const { 
       email, 
@@ -104,10 +113,10 @@ export async function POST(req: NextRequest) {
       },
       { status: 201 }
     );
-  } catch (error) {
+  } catch (error: any) {
     console.error('Registration error:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: error?.message || 'Internal server error' },
       { status: 500 }
     );
   }

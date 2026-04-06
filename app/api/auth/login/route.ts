@@ -5,8 +5,6 @@ import { verifyPassword, signToken } from '@/lib/auth-utils';
 
 export async function POST(req: NextRequest) {
   try {
-    await dbConnect();
-
     const { email, password } = await req.json();
 
     if (!email || !password) {
@@ -16,7 +14,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Check for hardcoded admin coordinator credentials
+    // Check for hardcoded admin coordinator credentials BEFORE database connection
     if (email === 'admin' && password === 'admin123') {
       const token = signToken({
         userId: 'admin',
@@ -35,6 +33,17 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    // Only connect to database for non-admin users
+    try {
+      await dbConnect();
+    } catch (dbError) {
+      console.error('Database connection error:', dbError);
+      return NextResponse.json(
+        { error: 'Database connection failed. Please check your MongoDB URI.' },
+        { status: 500 }
+      );
+    }
+
     const user = await User.findOne({ email });
     if (!user) {
       return NextResponse.json(
@@ -43,7 +52,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const passwordMatch = await verifyPassword(password, user.password || '');
+    if (!user.password) {
+      return NextResponse.json(
+        { error: 'Invalid account configuration' },
+        { status: 401 }
+      );
+    }
+
+    const passwordMatch = await verifyPassword(password, user.password);
     if (!passwordMatch) {
       return NextResponse.json(
         { error: 'Invalid email or password' },
@@ -74,10 +90,10 @@ export async function POST(req: NextRequest) {
         }),
       },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Login error:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: error?.message || 'Internal server error' },
       { status: 500 }
     );
   }
